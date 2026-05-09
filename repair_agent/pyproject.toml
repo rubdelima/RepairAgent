@@ -16,6 +16,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 description = "An open-source attempt to make GPT-4 autonomous"
+dependencies = [
+    "openapi-python-client==0.28.3",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/Significant-Gravitas/Auto-GPT"

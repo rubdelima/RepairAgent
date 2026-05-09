@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Literal, Optional
+import json
 
 import openai
 from colorama import Fore
@@ -17,6 +18,7 @@ from ..base import (
 )
 from ..providers import openai as iopenai
 from ..providers import anthropic as ianthropic
+from ..providers import ollama_interface as iollama
 from ..providers.openai import (
     ALL_CHAT_MODELS,
     OpenAIFunctionCall,
@@ -24,12 +26,37 @@ from ..providers.openai import (
     count_openai_functions_tokens,
 )
 from ..providers.anthropic import is_anthropic_model
+from ..providers.ollama_interface import is_ollama_model
 from .token_counter import *
 
 # Models that require max_completion_tokens instead of max_tokens (and reject
 # temperature / response_format).  Populated on first failed call; avoids the
 # wasteful try→fail→retry cycle on every subsequent request to the same model.
 _REASONING_MODELS: set[str] = set()
+
+
+def _convert_openai_functions_to_ollama_tools(
+    functions: List[OpenAIFunctionSpec],
+) -> list[dict[str, dict]]:
+    return [
+        {"type": "function", "function": function.schema}
+        for function in functions
+    ]
+
+
+def _extract_tool_call_from_message(message: dict) -> OpenAIFunctionCall | None:
+    tool_calls = message.get("tool_calls")
+    if not tool_calls:
+        return None
+    first = tool_calls[0]
+    function_payload = first.get("function", first)
+    name = function_payload.get("name")
+    if not name:
+        return None
+    arguments = function_payload.get("arguments") or {}
+    if not isinstance(arguments, str):
+        arguments = json.dumps(arguments)
+    return OpenAIFunctionCall(name=name, arguments=arguments)
 
 
 def call_ai_function(
@@ -132,7 +159,7 @@ def create_chat_completion(
             min(model_max - prompt_tlength - 1, 4000)
         )  # the -1 is just here because we have a bug and we don't know how to fix it. When using gpt-4-0314 we get a token error.
         logger.debug(f"Prompt length: {prompt_tlength} tokens")
-        if functions and not is_anthropic_model(model):
+        if functions and not is_anthropic_model(model) and not is_ollama_model(model):
             functions_tlength = count_openai_functions_tokens(functions, model)
             max_tokens -= functions_tlength
             logger.debug(f"Functions take up {functions_tlength} tokens in API call")
@@ -149,8 +176,8 @@ def create_chat_completion(
         "max_tokens": max_tokens,
     }
 
-    # Anthropic models don't support response_format or OpenAI functions
-    if not is_anthropic_model(model):
+    # Anthropic and Ollama models don't support OpenAI response_format
+    if not is_anthropic_model(model) and not is_ollama_model(model):
         chat_completion_kwargs["response_format"] = { "type": "json_object" }
 
     for plugin in config.plugins:
@@ -172,6 +199,15 @@ def create_chat_completion(
     if is_anthropic_model(model):
         # Anthropic Claude models
         response = ianthropic.create_chat_completion(
+            messages=prompt.raw(),
+            **chat_completion_kwargs,
+        )
+    elif is_ollama_model(model):
+        if functions:
+            chat_completion_kwargs["tools"] = _convert_openai_functions_to_ollama_tools(
+                functions
+            )
+        response = iollama.create_chat_completion(
             messages=prompt.raw(),
             **chat_completion_kwargs,
         )
@@ -223,6 +259,13 @@ def create_chat_completion(
     first_message: ResponseMessageDict = response.choices[0].message
     content: str | None = first_message.get("content")
     function_call: FunctionCallDict | None = first_message.get("function_call")
+    if function_call is None:
+        tool_call = _extract_tool_call_from_message(first_message)
+        if tool_call is not None:
+            function_call = {
+                "name": tool_call.name,
+                "arguments": tool_call.arguments,
+            }
 
     for plugin in config.plugins:
         if not plugin.can_handle_on_response():

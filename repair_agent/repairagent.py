@@ -110,6 +110,7 @@ ANTHROPIC_MODELS = [
 ]
 
 
+
 # ---------------------------------------------------------------------------
 # Environment checks
 # ---------------------------------------------------------------------------
@@ -190,7 +191,6 @@ def check_environment() -> dict[str, tuple[bool, str]]:
     checks["API key"] = (has_openai or has_anthropic, key_status)
 
     return checks
-
 
 def _check_python_packages() -> bool:
     """Quick check if critical Python packages are installed."""

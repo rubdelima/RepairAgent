@@ -381,12 +381,20 @@ class ConfigBuilder(Configurable[Config]):
 def check_openai_api_key(config: Config) -> None:
     """Check if an API key (OpenAI or Anthropic) is set."""
     from autogpt.llm.providers.anthropic import is_anthropic_model
+    from autogpt.llm.providers.ollama_interface import is_ollama_model
 
     # If using an Anthropic model, check for Anthropic key
     using_anthropic = any(
         is_anthropic_model(m)
         for m in [config.fast_llm, config.smart_llm, config.static_llm]
     )
+    using_ollama = any(
+        is_ollama_model(m)
+        for m in [config.fast_llm, config.smart_llm, config.static_llm]
+    )
+
+    if using_ollama:
+        return
 
     if using_anthropic:
         if not config.anthropic_api_key and not os.getenv("ANTHROPIC_API_KEY"):

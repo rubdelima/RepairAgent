@@ -55,6 +55,10 @@ def count_message_tokens(
         tokens_per_message = 3
         tokens_per_name = 1
         encoding_model = "gpt-4"  # use gpt-4 tokenizer as approximation
+    elif model.startswith("ollama-") or model.startswith("ollama:"):
+        tokens_per_message = 3
+        tokens_per_name = 1
+        encoding_model = "gpt-4"
     elif model.startswith("gpt-3.5-turbo"):
         tokens_per_message = (
             4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
