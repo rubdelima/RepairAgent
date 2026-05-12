@@ -5,6 +5,10 @@ from pathlib import Path
 import re
 import json
 from autogpt.logs import logger
+from langchain.chat_models import ChatOpenAI
+from langchain.schema.messages import HumanMessage, SystemMessage, AIMessage
+import autogpt.llm.providers.ollama_interface as ollama_interface
+from autogpt.llm.providers.anthropic import is_anthropic_model
 
 
 def get_info(name: str, index: int, workspace) -> str:
@@ -327,17 +331,15 @@ def extract_fail_report(name: str, index: str, workspace):
     return "There are {} failing test cases, here is the full log of failing cases:\n".format(len(failing_test_cases))+\
         "\n\n".join(["\n".join(ftc) for ftc in failing_test_cases])
 
-from langchain.chat_models import ChatOpenAI
-from langchain.schema.messages import HumanMessage, SystemMessage, AIMessage
-
 
 def _get_chat_model(model):
     """Get the appropriate LangChain chat model for the given model name."""
-    from autogpt.llm.providers.anthropic import is_anthropic_model
     temperature = float(os.environ.get("TEMPERATURE", "0.0"))
     # gpt-5 family only accepts temperature=1.0
     if model.startswith("gpt-5"):
         temperature = 1.0
+    if ollama_interface.is_ollama_model(model):
+        return ollama_interface.OllamaChatWrapper(model=model, temperature=temperature)
     if is_anthropic_model(model):
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(model=model, temperature=temperature)

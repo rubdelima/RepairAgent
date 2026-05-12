@@ -71,9 +71,7 @@ def run_auto_gpt(
     # or import it directly.
     logger.config = config
 
-    # TODO: fill in llm values here
-    check_openai_api_key(config)
-
+    # Create config first to set model properly, then check API keys
     create_config(
         config,
         continuous,
@@ -91,6 +89,9 @@ def run_auto_gpt(
         skip_news,
         model=model,    # Pass through to config
     )
+
+    # Check API keys after config is set with the correct model
+    check_openai_api_key(config)
 
     if config.continuous_mode:
         for line in get_legal_warning().split("\n"):
@@ -375,12 +376,7 @@ def update_user(
                 expand=False,
             ))
 
-            # Also log to file for activity.log
-            logger._log(
-                "NEXT ACTION:",
-                "",
-                f"COMMAND = {remove_ansi_escape(command_name)}  ARGUMENTS = {command_args}",
-            )
+            # Note: rich panel already shows the next action on screen.
     else:
         logger.typewriter_log(
             "NO ACTION SELECTED: ",
@@ -546,9 +542,6 @@ def print_assistant_thoughts(
     assistant_thoughts = assistant_reply_json_valid.get("thoughts", {})
     if not assistant_thoughts:
         return
-
-    # Log to file for activity.log
-    logger._log(f"{ai_name.upper()} THOUGHTS:", "", str(assistant_thoughts))
 
     # Build rich panel with structured thought sections
     sections = []

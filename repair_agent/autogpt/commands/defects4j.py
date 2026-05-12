@@ -14,12 +14,30 @@ import time
 from autogpt.agents.agent import Agent
 from autogpt.command_decorator import command
 from autogpt.logs import logger
+from langchain.chat_models import ChatOpenAI
+from langchain.schema.messages import HumanMessage, SystemMessage, AIMessage
+import autogpt.llm.providers.ollama_interface as ollama_interface
+from autogpt.llm.providers.anthropic import is_anthropic_model
 
 import javalang
 from create_files_index import list_java_files
 
 ALLOWLIST_CONTROL = "allowlist"
 DENYLIST_CONTROL = "denylist"
+
+
+def _get_chat_model(model):
+    """Get the appropriate LangChain chat model for the given model name."""
+    temperature = float(os.environ.get("TEMPERATURE", "0.0"))
+    # gpt-5 family only accepts temperature=1.0
+    if model.startswith("gpt-5"):
+        temperature = 1.0
+    if ollama_interface.is_ollama_model(model):
+        return ollama_interface.OllamaChatWrapper(model=model, temperature=temperature)
+    if is_anthropic_model(model):
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model, temperature=temperature)
+    return ChatOpenAI(model=model, temperature=temperature)
 
 def preprocess_paths(agent, project_name, bug_index, filepath):
     workspace = agent.config.workspace_path
@@ -1052,7 +1070,7 @@ from langchain.schema.messages import HumanMessage, SystemMessage, AIMessage
 )
 """
 def ask_chatgpt(question: str, agent: Agent):
-    chat = ChatOpenAI(model=agent.config.static_llm, temperature=agent.config.temperature)
+    chat = _get_chat_model(agent.config.static_llm)
 
     if not agent.ask_chatgpt:
         messages = [
@@ -1071,11 +1089,7 @@ If the details in the given quetion are not enough, you should ask the user to a
     return response.content
 
 def validate_fix_against_hypothesis(bug_report, hypothesis, fix, model):
-    temperature = float(os.environ.get("TEMPERATURE", "0.0"))
-    # gpt-5 family only accepts temperature=1.0
-    if model.startswith("gpt-5"):
-        temperature = 1.0
-    chat = ChatOpenAI(model=model, temperature=temperature)
+    chat = _get_chat_model(model)
 
     messages = [
         SystemMessage(
@@ -1333,10 +1347,7 @@ def extract_function_def_context(project_name, bug_index, method_name, filepath,
 def auto_complete_functions(project_name, bug_index, filepath, method_name, agent):
     context = extract_function_def_context(project_name, bug_index, method_name, filepath, agent)
     # gpt-5 family only accepts temperature=1.0
-    temperature = agent.config.temperature
-    if agent.config.static_llm.startswith("gpt-5"):
-        temperature = 1.0
-    chat = ChatOpenAI(model=agent.config.static_llm, temperature=temperature)
+    chat = _get_chat_model(agent.config.static_llm)
     messages = [
             SystemMessage(
                 content="You are a code implementer and autocompletion engine. Basically, you would be given some already written code up to some line and you would be asked to implement the function/method that is declared at the last line. Always give full implementation of the method starting from declaration (public void myFunc(...)) to all the body. Take the given context into considration. Only give the implementation of the method and nothing else. If you want to add some explanation you can write it as comments above each line of code."),
