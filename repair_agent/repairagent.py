@@ -477,7 +477,8 @@ def setup_api_keys() -> str | None:
     console.print("  [1] OpenAI (GPT models)")
     console.print("  [2] Anthropic (Claude models)")
     console.print("  [3] Both")
-    choice = Prompt.ask("  Provider", choices=["1", "2", "3"], default="1")
+    console.print("  [4] Ollama (local, no API key)")
+    choice = Prompt.ask("  Provider", choices=["1", "2", "3", "4"], default="1")
 
     env_files = [
         str(SCRIPT_DIR / ".env"),
@@ -507,6 +508,8 @@ def setup_api_keys() -> str | None:
             provider = "anthropic" if provider is None else "both"
 
     console.print()
+    if choice == "4":
+        provider = "ollama"
     return provider
 
 
@@ -531,8 +534,7 @@ def select_model() -> tuple[str, float]:
             models.append((name, desc))
 
     if not models:
-        console.print("  [red]No API keys configured. Run setup first.[/red]")
-        sys.exit(1)
+        console.print("  [yellow]No API keys configured. You can still enter a custom model (e.g. ollama:...).[/yellow]")
 
     for i, (name, desc) in enumerate(models, 1):
         console.print(f"  [{i}] {name} — {desc}")

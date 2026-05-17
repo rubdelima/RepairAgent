@@ -1,0 +1,41 @@
+grid_search:
+  # List of Ollama models to test.
+  models:
+    - "ollama:gpt-oss:20b"
+    - "ollama:gemma4:e4b"
+
+  overwrite: false
+
+  # Arguments passed to `repairagent.py run` (model is injected automatically).
+  run:
+    # Set to true to use a bugs file with all bugs.
+    # When true, `bugs_file` must point to a file with one bug per line: "Project Index".
+    all_bugs: false
+
+    # Optional: path to a bugs file (used when all_bugs is true).
+    bugs_file: ""
+
+    # List of bugs to run when all_bugs is false.
+    # Format: "Project Index" (e.g., "Chart 1").
+    bugs_ids:
+      - "Chart 1"
+
+    # Max cycles for each run (0 = unlimited).
+    max_cycles: 40
+
+    # Extra args passed verbatim to `repairagent.py run`.
+    # Example: ["--docker", "--skip-news"]
+    extra_args: []
+
+  # Ollama-specific controls (applied by grid_search to each run).
+  ollama:
+    # Enable repetition detection (off by default).
+    repeat_detect: false
+    # Hard timeout (seconds) for the model stream to finish.
+    stream_timeout_s: 180
+
+  # Environment variables to set for each run (optional extras).
+  env: {}
+
+  # Where to store experiment outputs and logs (per model).
+  output_dir: "grid_results"
