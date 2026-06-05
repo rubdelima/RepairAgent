@@ -279,7 +279,20 @@ def run_interaction_loop(
         ##################
         # Get user input #
         ##################
-        if cycles_remaining == 1:  # Last cycle
+        is_limited_continuous_final_cycle = (
+            config.continuous_mode
+            and config.continuous_limit
+            and cycles_remaining == 1
+        )
+
+        if is_limited_continuous_final_cycle:
+            user_input = None
+            logger.typewriter_log(
+                "CYCLE LIMIT REACHED: ",
+                Fore.YELLOW,
+                f"Executing final cycle ({config.continuous_limit}) and exiting.",
+            )
+        elif cycles_remaining == 1:  # Last cycle
             user_feedback, user_input, new_cycles_remaining = get_user_feedback(
                 config,
                 ai_config,

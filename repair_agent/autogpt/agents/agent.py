@@ -32,6 +32,32 @@ from autogpt.commands.defects4j_static import query_for_mutants, construct_fix_c
 from .base import AgentThoughts, BaseAgent, CommandArgs, CommandName
 
 
+STATE_COMMANDS = {
+    "collect information to understand the bug": {
+        "extract_test_code",
+        "express_hypothesis",
+        "read_range",
+    },
+    "collect information to fix the bug": {
+        "search_code_base",
+        "get_classes_and_methods",
+        "extract_similar_functions_calls",
+        "extract_method_code",
+        "write_fix",
+        "read_range",
+        "AI_generates_method_code",
+        "AI_generate_method_code",
+    },
+    "trying out candidate fixes": {
+        "write_fix",
+        "read_range",
+        "go_back_to_collect_more_info",
+        "discard_hypothesis",
+        "goals_accomplished",
+    },
+}
+
+
 class Agent(BaseAgent):
     """Agent class for interacting with Auto-GPT."""
 
@@ -167,6 +193,9 @@ class Agent(BaseAgent):
                 USER_INPUT_FILE_NAME,
             )
 
+        elif command_name is None:
+            result = "No command selected because the assistant response could not be parsed."
+
         else:
             for plugin in self.config.plugins:
                 if not plugin.can_handle_pre_command():
@@ -230,6 +259,8 @@ class Agent(BaseAgent):
         if not isinstance(command_dict, dict):
             assistant_reply_dict["command"] = {"name": "unknown_command", "args":{}}
             command_dict = assistant_reply_dict["command"]
+        command_dict = self._normalize_command_shape(command_dict, assistant_reply_dict)
+        assistant_reply_dict["command"] = command_dict
 
         with open("commands_interface.json") as cif:
             commands_interface = json.load(cif)
@@ -271,8 +302,15 @@ class Agent(BaseAgent):
                 assistant_reply_dict["command"] = new_command_dict
             else:
                 assistant_reply_dict["command"] = {"name": "unknown_command", "args":{}}
+
+            command_dict = assistant_reply_dict["command"]
+            command_dict = self._coerce_command_for_current_state(command_dict, assistant_reply_dict)
+            assistant_reply_dict["command"] = command_dict
             
-            if assistant_reply_dict["command"]["name"] == "write_fix":
+            if (
+                assistant_reply_dict["command"]["name"] == "write_fix"
+                and self.hyperparams.get("external_fix_strategy", 0)
+            ):
                 try:
                     fix_content = assistant_reply_dict["command"]["args"].get("changes_dicts", "[]")
                 except Exception as e:
@@ -367,6 +405,59 @@ class Agent(BaseAgent):
             NEXT_ACTION_FILE_NAME,
         )
         return response
+
+    def _normalize_command_shape(
+        self,
+        command_dict: dict[str, Any],
+        assistant_reply_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Repair common nested command shapes returned by local models."""
+        args = command_dict.get("args")
+        if (
+            isinstance(args, dict)
+            and isinstance(args.get("args"), dict)
+            and ("name" in args or "command" in args)
+        ):
+            nested_name = args.get("name") or command_dict.get("name")
+            return {"name": nested_name, "args": args["args"]}
+        return command_dict
+
+    def _coerce_command_for_current_state(
+        self,
+        command_dict: dict[str, Any],
+        assistant_reply_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Keep the selected command inside the current state's command set."""
+        command_name = command_dict.get("name")
+        allowed_commands = STATE_COMMANDS.get(self.current_state, set())
+        if command_name in allowed_commands:
+            return command_dict
+
+        thoughts = str(assistant_reply_dict.get("thoughts") or "").strip()
+
+        if command_name == "search" and "search_code_base" in allowed_commands:
+            query = command_dict.get("args", {}).get("query", "")
+            key_words = [query] if isinstance(query, str) and query else []
+            return {
+                "name": "search_code_base",
+                "args": {
+                    "project_name": self.project_name,
+                    "bug_index": self.bug_index,
+                    "key_words": key_words,
+                },
+            }
+
+        if (
+            command_name in {"apply_patch", "patch"}
+            and self.current_state == "collect information to understand the bug"
+        ):
+            hypothesis = thoughts or (
+                "The collected evidence is sufficient to form a hypothesis; "
+                "the next step is to move to fix-oriented commands."
+            )
+            return {"name": "express_hypothesis", "args": {"hypothesis": hypothesis}}
+
+        return command_dict
 
 
 def extract_command(

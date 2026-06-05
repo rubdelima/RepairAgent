@@ -764,6 +764,43 @@ def increment_experiment() -> str:
     return str(exp_dir)
 
 
+def experiment_has_plausible_patch(exp_dir: str, project: str, bug_index: str) -> bool:
+    """Return whether the current experiment saved a plausible patch for this bug."""
+    patch_file = (
+        Path(exp_dir)
+        / "plausible_patches"
+        / f"plausible_patches_{project}_{bug_index}.json"
+    )
+    if not patch_file.exists():
+        return False
+    try:
+        patches = json.loads(patch_file.read_text())
+    except Exception:
+        return False
+    return bool(patches)
+
+
+def prepare_run_hyperparams(hyperparams_file: str, max_cycles: int, exp_dir: str) -> str:
+    """Copy hyperparams into the experiment with the real cycle budget applied."""
+    if not max_cycles:
+        return hyperparams_file
+
+    hyperparams_path = Path(hyperparams_file)
+    try:
+        hyperparams = json.loads(hyperparams_path.read_text())
+    except Exception:
+        return hyperparams_file
+
+    current_limit = hyperparams.get("commands_limit")
+    if isinstance(current_limit, int) and current_limit <= max_cycles:
+        return hyperparams_file
+
+    hyperparams["commands_limit"] = max_cycles
+    adjusted_path = Path(exp_dir) / "run_hyperparams.json"
+    adjusted_path.write_text(json.dumps(hyperparams, indent=4) + "\n")
+    return str(adjusted_path)
+
+
 def prepare_ai_settings(project: str, bug_index: str):
     """Generate ai_settings.yaml for a specific bug."""
     settings = AI_SETTINGS_TEMPLATE.format(
@@ -912,20 +949,29 @@ def execute_run(bugs: list[tuple[str, str]], model: str, hyperparams: str, max_c
     console.print(Rule("Running RepairAgent", style="bold green"))
     console.print(f"  Experiment dir: {exp_dir}")
     console.print()
+    run_hyperparams = prepare_run_hyperparams(hyperparams, max_cycles, exp_dir)
 
     results = []
     for i, (project, bug_index) in enumerate(bugs, 1):
         console.print(Rule(f"[{i}/{len(bugs)}] {project} {bug_index}", style="bold cyan"))
         try:
-            run_single_bug(project, bug_index, model, hyperparams, max_cycles, temperature)
-            results.append((project, bug_index, "OK"))
-            console.print(f"  [green]{project} {bug_index} completed[/green]")
+            run_single_bug(project, bug_index, model, run_hyperparams, max_cycles, temperature)
+            if experiment_has_plausible_patch(exp_dir, project, bug_index):
+                results.append((project, bug_index, "OK"))
+                console.print(f"  [green]{project} {bug_index} completed[/green]")
+            else:
+                results.append((project, bug_index, "FAILED: no plausible patch"))
+                console.print(f"  [red]{project} {bug_index} ended without a plausible patch[/red]")
         except SystemExit as e:
             # task_complete() calls quit() → SystemExit(0): normal agent finish.
             # sys.exit(1) means a fatal setup error — re-raise to abort the run.
             if e.code == 0 or e.code is None:
-                results.append((project, bug_index, "OK"))
-                console.print(f"  [green]{project} {bug_index} completed[/green]")
+                if experiment_has_plausible_patch(exp_dir, project, bug_index):
+                    results.append((project, bug_index, "OK"))
+                    console.print(f"  [green]{project} {bug_index} completed[/green]")
+                else:
+                    results.append((project, bug_index, "FAILED: no plausible patch"))
+                    console.print(f"  [red]{project} {bug_index} ended without a plausible patch[/red]")
             else:
                 raise
         except Exception as e:

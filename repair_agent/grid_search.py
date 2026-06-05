@@ -117,14 +117,15 @@ def _pick_new_experiment(before: set[Path], after: set[Path]) -> Path | None:
 
 def _parse_success(stdout: str, stderr: str) -> tuple[bool, str]:
     text = f"{stdout}\n{stderr}"
-    match = re.search(r"(\d+)/(\d+) bugs completed successfully", text)
-    if match:
-        succeeded = int(match.group(1)) > 0
-        return succeeded, match.group(0)
     if "Plausible patch saved" in text:
         return True, "Plausible patch saved"
+    if re.search(r"\b0 failing test(?:s| cases)?\b", text):
+        return True, "0 failing tests"
     if "FAILED" in text:
         return False, "FAILED"
+    match = re.search(r"(\d+)/(\d+) bugs completed successfully", text)
+    if match:
+        return False, f"{match.group(0)} without plausible patch marker"
     return False, "No success marker found"
 
 
@@ -254,9 +255,9 @@ def main() -> int:
 
             if not overwrite:
                 previous_status = _load_status(status_path)
-                if previous_status and previous_status.get("completed") and not previous_status.get("interrupted"):
+                if previous_status and previous_status.get("success") and not previous_status.get("interrupted"):
                     progress.console.print(
-                        f"[cyan]Skipping completed run:[/cyan] {model_name} | {bug}"
+                        f"[cyan]Skipping successful run:[/cyan] {model_name} | {bug}"
                     )
                     summary.append(
                         {
@@ -299,6 +300,14 @@ def main() -> int:
                 )
             if "stream_timeout_s" in ollama_cfg:
                 env["REPAIRAGENT_OLLAMA_STREAM_TIMEOUT_S"] = str(ollama_cfg.get("stream_timeout_s"))
+            if "num_ctx" in ollama_cfg:
+                env["REPAIRAGENT_OLLAMA_NUM_CTX"] = str(ollama_cfg.get("num_ctx"))
+            if "think" in ollama_cfg:
+                think_value = ollama_cfg.get("think")
+                if think_value is not None:
+                    env["REPAIRAGENT_OLLAMA_THINK"] = (
+                        "1" if bool(think_value) else "0"
+                    )
 
             progress.update(task_id, description=f"Running {model_name} | {bug}")
             log_file = run_output_dir / "run.log"
@@ -322,7 +331,7 @@ def main() -> int:
             run_status = {
                 "model": model_name,
                 "bug": bug,
-                "completed": True,
+                "completed": result.returncode == 0,
                 "interrupted": interrupted,
                 "returncode": result.returncode,
                 "success": success,

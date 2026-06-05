@@ -2,9 +2,9 @@ grid_search:
   # List of Ollama models to test.
   models:
     - "ollama:gpt-oss:20b"
-    - "ollama:gemma4:e4b"
+    # - "ollama:gemma4:12b"
 
-  overwrite: false
+  overwrite: true
 
   # Arguments passed to `repairagent.py run` (model is injected automatically).
   run:
@@ -19,9 +19,10 @@ grid_search:
     # Format: "Project Index" (e.g., "Chart 1").
     bugs_ids:
       - "Chart 1"
+      - "Chart 2"
 
     # Max cycles for each run (0 = unlimited).
-    max_cycles: 40
+    max_cycles: 10
 
     # Extra args passed verbatim to `repairagent.py run`.
     # Example: ["--docker", "--skip-news"]
@@ -29,6 +30,9 @@ grid_search:
 
   # Ollama-specific controls (applied by grid_search to each run).
   ollama:
+    # Ollama defaults many models to a 4096-token context. Chart 2's prompt can
+    # reach that size, leaving no room for JSON content after reasoning.
+    num_ctx: 16384
     # Enable repetition detection (off by default).
     repeat_detect: false
     # Hard timeout (seconds) for the model stream to finish.

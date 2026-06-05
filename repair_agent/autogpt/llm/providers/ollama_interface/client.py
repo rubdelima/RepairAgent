@@ -54,6 +54,10 @@ def create_chat_completion(
     functions = kwargs.pop("functions", None)
     response_format = kwargs.pop("response_format", None)
     think = kwargs.pop("think", None)
+    if think is None:
+        think_env = os.environ.get("REPAIRAGENT_OLLAMA_THINK", "").strip().lower()
+        if think_env not in {"", "auto", "default"}:
+            think = think_env in {"1", "true", "yes", "on"}
 
     stream = bool(kwargs.pop("stream", False) or should_stream_from_spinner())
     detect_repetition = bool(
@@ -64,8 +68,14 @@ def create_chat_completion(
 
     if "temperature" not in options:
         options["temperature"] = temperature
-    if max_tokens is not None and "num_predict" not in options:
-        options["num_predict"] = max_tokens
+    num_ctx = os.environ.get("REPAIRAGENT_OLLAMA_NUM_CTX")
+    if num_ctx and "num_ctx" not in options:
+        try:
+            options["num_ctx"] = int(num_ctx)
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                f"{Fore.YELLOW}Invalid REPAIRAGENT_OLLAMA_NUM_CTX={num_ctx!r}; ignoring.{Fore.RESET}"
+            )
 
     if tools is None and functions is not None:
         tools = functions

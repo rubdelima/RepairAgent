@@ -164,17 +164,19 @@ def create_chat_completion(
             max_tokens -= functions_tlength
             logger.debug(f"Functions take up {functions_tlength} tokens in API call")
 
+    max_tokens_log = "unbounded" if is_ollama_model(model) else str(max_tokens)
     logger.debug(
-        f"{Fore.GREEN}Creating chat completion with model {model}, temperature {temperature}, max_tokens {max_tokens}{Fore.RESET}"
+        f"{Fore.GREEN}Creating chat completion with model {model}, temperature {temperature}, max_tokens {max_tokens_log}{Fore.RESET}"
     )
     with open("model_logging_temp.txt", "w") as mlt:
-        mlt.write(f"Creating chat completion with model {model}, temperature {temperature}, max_tokens {max_tokens}")
+        mlt.write(f"Creating chat completion with model {model}, temperature {temperature}, max_tokens {max_tokens_log}")
 
     chat_completion_kwargs = {
         "model": model,
         "temperature": temperature,
-        "max_tokens": max_tokens,
     }
+    if not is_ollama_model(model):
+        chat_completion_kwargs["max_tokens"] = max_tokens
 
     # Anthropic and Ollama models don't support OpenAI response_format
     if not is_anthropic_model(model) and not is_ollama_model(model):

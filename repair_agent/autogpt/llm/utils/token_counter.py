@@ -10,13 +10,35 @@ from autogpt.llm.base import Message
 from autogpt.logs import logger
 
 
+class ApproximateEncoding:
+    """Small offline fallback used when tiktoken cannot load its BPE files."""
+
+    @staticmethod
+    def encode(text: str) -> list[str]:
+        text = str(text)
+        return re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+
+
 def get_encoding(model_name):
     try:
         encoding = tiktoken.encoding_for_model(model_name)
     except KeyError:
         encoding_name = "cl100k_base" if model_name in ["gpt-3.5-turbo", "gpt-4"] else "o200k_base"
         logger.warn(f"Warning: encoding for {model_name} not found. Using {encoding_name} encoding.")
-        encoding = tiktoken.get_encoding(encoding_name)
+        try:
+            encoding = tiktoken.get_encoding(encoding_name)
+        except Exception as exc:
+            logger.warn(
+                f"Warning: could not load tiktoken encoding {encoding_name}: {exc}. "
+                "Using approximate token counting."
+            )
+            encoding = ApproximateEncoding()
+    except Exception as exc:
+        logger.warn(
+            f"Warning: could not load tiktoken encoding for {model_name}: {exc}. "
+            "Using approximate token counting."
+        )
+        encoding = ApproximateEncoding()
     return encoding
         
 
