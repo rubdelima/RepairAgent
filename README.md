@@ -2,7 +2,9 @@
 
 Este README descreve a adaptacao do RepairAgent para uso com modelos locais e a execucao de benchmarks via Grid Search. O foco do Grid Search e comparar o comportamento de diferentes modelos mantendo o restante da configuracao estavel.
 
-Para a descricao original do projeto, arquitetura do agente e resultados publicados, consulte o [README original](README_original.md) e o artigo [RepairAgent: An Autonomous, LLM-Based Agent for Program Repair](https://arxiv.org/abs/2403.17134).
+Para a descricao original do projeto, arquitetura do agente e resultados publicados, consulte o [README original](README_original.md) e o artigo [RepairAgent: An Autonomous, LLM-Based Agent for Program Repair](https://arxiv.org/abs/2403.17134). A apresentacao desta adaptacao com modelos locais esta em [docs/RepairAgent_Local.pdf](docs/RepairAgent_Local.pdf).
+
+As demais instrucoes gerais de execucao do projeto base podem ser consultadas no [README original](README_original.md), que preserva a documentacao associada ao paper inicial.
 
 ## Projeto Base
 
@@ -28,6 +30,17 @@ Execucao direta com modelo local:
 ```bash
 python3 repairagent.py run --bugs "Chart 1" --model ollama:gpt-oss:20b
 ```
+
+## Instalacao de Dependencias
+
+A partir da raiz do repositorio, entre no diretorio do agente e instale as dependencias Python:
+
+```bash
+cd repair_agent
+python3 -m pip install -r requirements.txt
+```
+
+Se preferir usar um ambiente virtual, ative-o antes de executar o comando acima. A instalacao de dependencias externas do projeto base, como Java, Perl e Defects4J, esta descrita no [README original](README_original.md).
 
 ## Modelos Locais
 
