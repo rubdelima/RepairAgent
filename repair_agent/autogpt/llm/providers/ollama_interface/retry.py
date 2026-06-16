@@ -28,7 +28,7 @@ def retry_api(
                     if "temperature" in kwargs:
                         kwargs["temperature"] = float(kwargs["temperature"]) + 0.1
                         new_temperature = kwargs.get("temperature")
-                    if retries >= max_retries - 1:
+                    if kwargs.get("think") is not True:
                         kwargs["think"] = False
                     if warn_user:
                         temp_note = f" New temperature={new_temperature:.2f}." if new_temperature is not None else ""

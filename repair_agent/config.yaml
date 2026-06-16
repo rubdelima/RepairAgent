@@ -4,25 +4,26 @@ grid_search:
     - "ollama:gpt-oss:20b"
     # - "ollama:gemma4:12b"
 
-  overwrite: true
+  overwrite: false
 
   # Arguments passed to `repairagent.py run` (model is injected automatically).
   run:
-    # Set to true to use a bugs file with all bugs.
-    # When true, `bugs_file` must point to a file with one bug per line: "Project Index".
-    all_bugs: false
+    # Selection mode:
+    # - true: use `bugs_file` if provided; otherwise generate all available Defects4J bugs.
+    # - false: ignore `bugs_file` and use only `bugs_ids`.
+    all_bugs: true
 
-    # Optional: path to a bugs file (used when all_bugs is true).
-    bugs_file: ""
+    # Optional: one bug per line, "Project Index". Used only when all_bugs is true.
+    # bugs_file: "bugs_10_each_project.txt"
 
-    # List of bugs to run when all_bugs is false.
-    # Format: "Project Index" (e.g., "Chart 1").
+    # Explicit bug list used only when all_bugs is false.
+    # Format: "Project Index" (e.g. "Chart 1").
     bugs_ids:
       - "Chart 1"
       - "Chart 2"
 
     # Max cycles for each run (0 = unlimited).
-    max_cycles: 10
+    max_cycles: 15
 
     # Extra args passed verbatim to `repairagent.py run`.
     # Example: ["--docker", "--skip-news"]
@@ -42,4 +43,4 @@ grid_search:
   env: {}
 
   # Where to store experiment outputs and logs (per model).
-  output_dir: "grid_results"
+  output_dir: "grid_results_final"

@@ -1,402 +1,160 @@
-<p align="center">
-  <h1 align="center">RepairAgent</h1>
-  <p align="center">
-    <strong>Autonomous LLM-powered bug repair for Java projects — no human intervention needed.</strong>
-  </p>
-</p>
+# RepairAgent com Modelos Locais e Grid Search
 
-<p align="center">
-  <a href="https://github.com/codespaces/new?hide_repo_select=true&repo=sola-st/RepairAgent&ref=main"><img src="https://img.shields.io/badge/Open%20in-Codespaces-blue?logo=github" alt="Open in GitHub Codespaces"></a>
-  <a href="https://arxiv.org/abs/2403.17134"><img src="https://img.shields.io/badge/arXiv-2403.17134-b31b1b.svg" alt="arXiv"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+"></a>
-</p>
+Este README descreve a adaptacao do RepairAgent para uso com modelos locais e a execucao de benchmarks via Grid Search. O foco do Grid Search e comparar o comportamento de diferentes modelos mantendo o restante da configuracao estavel.
 
----
+Para a descricao original do projeto, arquitetura do agente e resultados publicados, consulte o [README original](README_original.md) e o artigo [RepairAgent: An Autonomous, LLM-Based Agent for Program Repair](https://arxiv.org/abs/2403.17134).
 
-RepairAgent is an autonomous agent that fixes bugs in Java projects using LLMs.
-It operates in a loop: **localize the bug -> analyze the code -> generate a fix -> test it -> iterate** — all without human guidance.
+## Projeto Base
 
-On the [Defects4J](https://github.com/rjust/defects4j) benchmark, RepairAgent correctly fixed **164 bugs**, outperforming prior state-of-the-art tools:
+RepairAgent e um agente autonomo para reparo automatico de bugs em projetos Java. A estrutura original combina:
 
-| Tool | Correct Fixes | Year |
-|------|:---:|:---:|
-| **RepairAgent** | **164** | 2024 |
-| ChatRepair | 162 | 2024 |
-| SelfAPR | 110 | 2023 |
-| ITER | 107 | 2023 |
-| AlphaRepair | 100 | 2022 |
-| Recoder | 68 | 2021 |
+1. selecao de um bug do Defects4J;
+2. entendimento do erro e coleta de contexto;
+3. geracao de patch;
+4. execucao de testes;
+5. iteracao ate encontrar um patch plausivel ou atingir o limite configurado.
 
-> Published at [ICSE 2025](https://arxiv.org/abs/2403.17134). RepairAgent is the first autonomous agent-based approach to automated program repair.
+Esta versao preserva essa estrutura e muda principalmente o provedor/modelo usado pelo agente, permitindo executar modelos locais via Ollama.
 
-## How It Works
-
-```
-                     RepairAgent Workflow
-                     ====================
-
-  +---------------------------------------------------------------+
-  |                      LLM-Powered Agent                        |
-  |                                                               |
-  |   +-----------------+    +------------------+    +----------+ |
-  |   |  1. Understand  | -> |   2. Collect Info | -> | 3. Fix   | |
-  |   |     the Bug     |    |    to Fix the Bug |    | the Bug  | |
-  |   +-----------------+    +------------------+    +----------+ |
-  |   | - Extract test  |    | - Search codebase |    | - Write  | |
-  |   | - Form          |    | - Extract methods |    |   patch   | |
-  |   |   hypothesis    |    | - Find similar    |    | - Run    | |
-  |   |                 |    |   patterns        |    |   tests  | |
-  |   +-----------------+    +------------------+    +----+-----+ |
-  |         ^                                              |      |
-  |         |           iterate if tests fail              |      |
-  |         +----------------------------------------------+      |
-  +---------------------------------------------------------------+
-
-  Input: Buggy Java project + failing test
-  Output: Correct patch that passes all tests
-```
-
-The agent has three states, each with specialized commands:
-- **Understand the bug**: reads failing tests, forms hypotheses about root causes
-- **Collect information**: searches the codebase, extracts method signatures and similar code patterns
-- **Try fixes**: generates patches, applies them, runs the test suite, and iterates
-
-## Supported Models
-
-RepairAgent supports both **OpenAI** and **Anthropic (Claude)** models:
-
-| Provider | Models | Environment Variable |
-|----------|--------|---------------------|
-| OpenAI | `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4-turbo`, `gpt-3.5-turbo` | `OPENAI_API_KEY` |
-| OpenAI (gpt-5) | `gpt-5-mini`, and other `gpt-5-*` variants | `OPENAI_API_KEY` |
-| Anthropic | `claude-sonnet-4-20250514`, `claude-haiku-4-20250414`, `claude-opus-4-20250514` | `ANTHROPIC_API_KEY` |
-
-> **Note:** You can pass any OpenAI or Anthropic model name via `--model` — the table above lists the models with pre-configured cost tracking, but unlisted models work too (cost tracking will be skipped).
->
-> **gpt-5 family:** These models only accept `temperature=1.0`. RepairAgent handles this automatically — any `--temperature` value is overridden to `1.0` when using a `gpt-5-*` model.
-
----
-
-## Quick Start
-
-The guided CLI handles everything — environment checks, API key setup, model selection, and bug picking:
+O ponto de entrada do agente fica em:
 
 ```bash
 cd repair_agent
-python3 repairagent.py                    # Interactive wizard — walks you through everything
-```
-
-Or run directly without prompts:
-
-```bash
-python3 repairagent.py run --bugs "Chart 1, Math 5" --model gpt-4o-mini
-```
-
-That's it. The CLI will tell you if anything is missing and help you set it up.
-
-### Environment options
-
-You need **Java 11**, **Perl**, and **Defects4J** installed. Pick whichever setup method is easiest for you:
-
-| Method | What to do |
-|--------|------------|
-| **Codespaces** (zero install) | Click the Codespaces badge above. Everything is pre-installed. |
-| **VS Code Dev Container** | Clone the repo, open in VS Code, click "Reopen in Container". See [details below](#vs-code-dev-container). |
-| **Docker** | `python3 repairagent.py run --docker --bugs "Chart 1" --model gpt-4o-mini` — builds and runs in a container. |
-| **Local** | Install Java 11, Perl, Defects4J manually. Run `python3 repairagent.py setup` to verify. |
-
-### VS Code Dev Container
-
-1. **Clone and prepare:**
-
-   ```bash
-   git clone https://github.com/sola-st/RepairAgent.git
-   cd RepairAgent/repair_agent
-   rm -rf defects4j
-   git clone https://github.com/rjust/defects4j.git
-   cp -r ../data/buggy-lines defects4j
-   cp -r ../data/buggy-methods defects4j
-   cd ..
-   ```
-
-2. **Open in VS Code**, then click "Reopen in Container" (or Command Palette: `Dev Containers: Reopen in Container`).
-
-3. **Run:**
-
-   ```bash
-   cd repair_agent
-   python3 repairagent.py
-   ```
-
----
-
-## Table of Contents
-
-1. [Usage](#usage)
-2. [Requirements](#requirements)
-3. [Configuration](#configuration)
-4. [Analyzing Results](#analyzing-results)
-5. [Replicating Experiments](#replicating-experiments)
-6. [Our Data](#our-data)
-7. [Contributing](#contributing)
-8. [Citation](#citation)
-
----
-
-## Usage
-
-### Interactive mode
-
-```bash
 python3 repairagent.py
 ```
 
-The wizard guides you through:
-1. **Environment check** — verifies Python, Java, Defects4J, API keys
-2. **API key setup** — configures OpenAI and/or Anthropic keys
-3. **Model selection** — pick from available models
-4. **Bug selection** — enter manually, pick from a project, or load a file
-5. **Run** — executes the agent and shows a results summary
-
-### Direct mode (for scripting/CI)
+Execucao direta com modelo local:
 
 ```bash
-# Single bug
-python3 repairagent.py run --bugs "Chart 1" --model gpt-4o-mini
-
-# Multiple bugs
-python3 repairagent.py run --bugs "Chart 1, Math 5, Lang 22" --model claude-sonnet-4-20250514
-
-# From a file
-python3 repairagent.py run --bugs-file experimental_setups/bugs_list --model gpt-4o-mini
-
-# In Docker
-python3 repairagent.py run --docker --bugs "Chart 1" --model gpt-4o-mini
-
-# Custom cycle limit
-python3 repairagent.py run --bugs "Chart 1" --model gpt-4o --max-cycles 60
-
-# Custom temperature
-python3 repairagent.py run --bugs "Chart 1" --model gpt-4o --temperature 0.5
-
-# Custom hyperparameters file
-python3 repairagent.py run --bugs "Chart 1" --model gpt-4o-mini --hyperparams my_hyperparams.json
+python3 repairagent.py run --bugs "Chart 1" --model ollama:gpt-oss:20b
 ```
 
-### CLI flags
+## Modelos Locais
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--bugs` | Comma-separated bugs, e.g. `"Chart 1,Math 5"` | — |
-| `--bugs-file` | Path to a text file with one bug per line | — |
-| `--model` | LLM model name | `gpt-4o-mini` |
-| `--temperature` | LLM temperature (0.0–2.0). Ignored for gpt-5 family (forced to 1.0). | `0.0` |
-| `--max-cycles` | Maximum agent cycles per bug | `40` |
-| `--hyperparams` | Path to hyperparameters JSON file | `hyperparams.json` |
-| `--docker` | Run inside a Docker container | off |
-
-### Setup only
+Modelos locais sao usados por meio do prefixo `ollama:` no nome do modelo. Antes de executar o RepairAgent ou o Grid Search, confirme que o Ollama esta ativo e que o modelo desejado esta disponivel:
 
 ```bash
-python3 repairagent.py setup                  # Check environment & configure API keys
-python3 repairagent.py setup --docker         # Build Docker image
-python3 repairagent.py setup --install-deps   # Install all missing dependencies automatically
+ollama list
+ollama pull gpt-oss:20b
 ```
 
-### Shell script (advanced)
-
-For users who prefer the original shell-based workflow:
+Depois disso, informe o modelo ao RepairAgent:
 
 ```bash
-./run_on_defects4j.sh <bugs_file> <hyperparams_file> [model]
+python3 repairagent.py run --bugs "Chart 1" --model ollama:gpt-oss:20b
 ```
 
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `bugs_file` | Text file with one `Project BugIndex` per line | `experimental_setups/bugs_list` |
-| `hyperparams_file` | JSON file with agent hyperparameters | `hyperparams.json` |
-| `model` | Model name (optional, default: `gpt-4o-mini`) | `gpt-4o`, `claude-sonnet-4-20250514` |
+No Grid Search, os modelos ficam apenas dentro da chave `grid_search.models` de `repair_agent/config.yaml`. Essa lista e a variavel principal do benchmark: cada item representa um modelo a ser comparado contra o mesmo conjunto de bugs e parametros.
 
-### What happens during a run
+Parametros uteis para modelos locais:
 
-1. RepairAgent checks out the buggy project version from Defects4J.
-2. The agent autonomously analyzes the bug, explores the code, and generates fix candidates.
-3. Each candidate is applied and tested against the project's test suite.
-4. Logs and results are saved to `experimental_setups/experiment_N/` (auto-incremented).
+| Parametro | Uso |
+|---|---|
+| `grid_search.models` | Lista de modelos avaliados no benchmark. |
+| `grid_search.ollama.num_ctx` | Janela de contexto usada nas chamadas ao Ollama. |
+| `grid_search.ollama.repeat_detect` | Controle de deteccao de repeticao, quando suportado. |
+| `grid_search.ollama.stream_timeout_s` | Timeout para resposta do modelo local. |
 
-### Choosing the LLM model
+## Como Configurar o Grid Search
 
-The `--model` flag (or third argument to `run_on_defects4j.sh`) sets **all** LLM models used by RepairAgent:
+O Grid Search e configurado em `repair_agent/config.yaml`, na chave `grid_search`.
 
-- **Main agent** (`fast_llm` / `smart_llm`): drives the agent's reasoning loop
-- **Static/auxiliary** (`static_llm`): used for mutation generation, fix queries, and auto-completion
+Exemplo minimo:
 
-For finer control, use environment variables:
+```yaml
+grid_search:
+  models:
+    - "ollama:gpt-oss:20b"
+
+  overwrite: false
+
+  run:
+    all_bugs: false
+    bugs_ids:
+      - "Chart 1"
+      - "Chart 2"
+    max_cycles: 15
+    extra_args: []
+
+  ollama:
+    num_ctx: 16384
+    repeat_detect: false
+    stream_timeout_s: 180
+
+  env: {}
+  output_dir: "grid_results_final"
+```
+
+Parametros principais:
+
+| Parametro | Obrigatorio | Descricao |
+|---|---:|---|
+| `models` | Sim | Modelos locais avaliados. Use o formato `ollama:<nome-do-modelo>`. |
+| `overwrite` | Nao | Quando `false`, resultados ja existentes sao preservados. |
+| `run.all_bugs` | Sim | Quando `true`, usa `bugs_file` ou todos os bugs disponiveis; quando `false`, usa `bugs_ids`. |
+| `run.bugs_file` | Nao | Arquivo com um bug por linha, no formato `Projeto Indice`. |
+| `run.bugs_ids` | Nao | Lista explicita de bugs, usada quando `all_bugs: false`. |
+| `run.max_cycles` | Nao | Limite de ciclos por bug. Use `0` para sem limite. |
+| `run.extra_args` | Nao | Argumentos extras repassados para `repairagent.py run`. |
+| `ollama.num_ctx` | Nao | Tamanho da janela de contexto para modelos Ollama. |
+| `ollama.repeat_detect` | Nao | Habilita ou desabilita deteccao de repeticao. |
+| `ollama.stream_timeout_s` | Nao | Tempo maximo para o stream do modelo responder. |
+| `env` | Nao | Variaveis de ambiente adicionais para cada execucao. |
+| `output_dir` | Nao | Pasta onde logs e sumarios do Grid Search serao gravados. |
+
+Para executar:
 
 ```bash
-export FAST_LLM=gpt-4o-mini       # main agent fast model
-export SMART_LLM=gpt-4o           # main agent smart model
-export STATIC_LLM=gpt-4o-mini     # auxiliary LLM calls
+cd repair_agent
+python3 grid_search.py --config config.yaml
 ```
 
----
+## Resultados
 
-## Configuration
+Cada combinacao `modelo x bug` gera uma pasta dentro de `output_dir`:
 
-### `hyperparams.json`
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `budget_control.name` | Budget visibility: `FULL-TRACK` (show remaining cycles) or `NO-TRACK` (suppress) | `FULL-TRACK` |
-| `budget_control.params.#fixes` | Minimum patches the agent should suggest within the budget | `4` |
-| `repetition_handling` | `RESTRICT` prevents the agent from repeating the same actions | `RESTRICT` |
-| `commands_limit` | Maximum number of agent cycles (iterations) | `40` |
-| `external_fix_strategy` | How often to query an external LLM for fix suggestions (0 = disabled) | `0` |
-
-Example:
-
-```json
-{
-  "budget_control": {
-    "name": "FULL-TRACK",
-    "params": { "#fixes": 4 }
-  },
-  "repetition_handling": "RESTRICT",
-  "commands_limit": 40,
-  "external_fix_strategy": 0
-}
+```text
+grid_results_final/
+  model_summary.csv
+  model_summary.json
+  summary.json
+  ollama_gpt-oss_20b/
+    Chart_1/
+      run.log
+      status.json
+      experiment_44/
 ```
 
----
+Arquivos principais:
 
-## Analyzing Results
+| Arquivo | Conteudo |
+|---|---|
+| `run.log` | Saida completa da execucao daquele bug. |
+| `status.json` | Resultado final da combinacao. |
+| `summary.json` | Resumo da invocacao atual do Grid Search. |
+| `model_summary.csv` | Tabela consolidada por modelo. |
+| `model_summary.json` | A mesma consolidacao em JSON. |
 
-### Output structure
+Campos principais de `status.json`:
 
-Each run creates an experiment folder under `experimental_setups/`:
+| Campo | Significado |
+|---|---|
+| `completed` | O processo terminou com codigo de saida `0`. |
+| `success` | O RepairAgent encontrou patch plausivel ou testes zerados. |
+| `interrupted` | A execucao foi interrompida. |
+| `returncode` | Codigo de saida do processo. |
+| `note` | Marcador usado para classificar o resultado. |
+| `updated_at` | Horario em UTC da ultima atualizacao. |
 
-```
-experimental_setups/experiment_N/
-  logs/                  # Full chat history and command outputs (one file per bug)
-  plausible_patches/     # Patches that pass all tests (one JSON file per bug)
-  mutations_history/     # Mutant patches generated from prior suggestions
-  responses/             # Raw LLM responses at each cycle
-  saved_contexts/        # Saved agent contexts
-  external_fixes/        # Fixes from external LLM queries (if enabled)
-```
+## Checklist Rapido
 
-### Unified overview
+Antes de rodar um benchmark:
 
-The `experiment_overview.py` script provides a single consolidated report across all experiments:
-
-```bash
-cd experimental_setups
-
-# Analyze all experiments
-python3 experiment_overview.py
-
-# Analyze a specific range
-python3 experiment_overview.py --start 1 --end 10
-
-# JSON output for scripting
-python3 experiment_overview.py --json
-```
-
-This produces:
-- Grand totals (bugs tested, fixed, plausible patches, queries)
-- Per-experiment summary table
-- Per-project breakdown
-- Per-bug detail with fix status, plausible status, iteration count
-- Lists of fixed and plausible-only bugs
-
-### Individual analysis scripts
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `analyze_experiment_results.py` | Generate per-experiment text reports | `python3 analyze_experiment_results.py` |
-| `collect_plausible_patches_files.py` | Consolidate plausible patches from multiple experiments | `python3 collect_plausible_patches_files.py 1 10` |
-| `get_list_of_fully_executed.py` | Find bugs that ran to completion (38+ cycles) | `python3 get_list_of_fully_executed.py` |
-| `calculate_tokens.py` | Token usage statistics and cost analysis | `python3 calculate_tokens.py` |
-
----
-
-## Replicating Experiments
-
-### Defects4J
-
-1. **Generate execution batches:**
-
-   ```bash
-   python3 get_defects4j_list.py
-   ```
-
-   This creates bug lists under `experimental_setups/batches/`.
-
-2. **Run on each batch:**
-
-   ```bash
-   ./run_on_defects4j.sh experimental_setups/batches/0 hyperparams.json gpt-4o-mini
-   ```
-
-   Replace `0` with the desired batch number. Batches can run in parallel.
-
-3. **Analyze results** using `experiment_overview.py` or the individual scripts above.
-
-4. **Generate comparison tables** (Table III in the paper):
-
-   ```bash
-   cd experimental_setups
-   python3 generate_main_table.py
-   ```
-
-5. **Draw Venn diagrams** (Figure 6 in the paper):
-
-   ```bash
-   python3 draw_venn_chatrepair_clean.py
-   ```
-
-### GitBug-Java
-
-1. Prepare the GitBug-Java VM (~140 GB disk). See: https://github.com/gitbugactions/gitbug-java
-2. Copy RepairAgent into the VM.
-3. Run with `experimental_setups/gitbuglist` as the bugs file.
-4. Analyze results using the same scripts.
-
----
-
-## Our Data
-
-In our experiments, RepairAgent fixed **164 bugs** on the Defects4J dataset.
-
-| Resource | Location |
-|----------|----------|
-| List of fixed bugs | [`data/final_list_of_fixed_bugs`](./data/final_list_of_fixed_bugs) |
-| Patch implementation details | [`data/fixes_implementation`](./data/fixes_implementation) |
-| Root patches (main phase) | [`data/root_patches/`](./data/root_patches) |
-| Derived patches (mutations) | [`data/derivated_pathces/`](./data/derivated_pathces) |
-| Defects4J 1.2 baseline comparison | [`repair_agent/experimental_setups/d4j12.csv`](./repair_agent/experimental_setups/d4j12.csv) |
-
-Note: RepairAgent encountered middleware exceptions on 29 bugs, which were not re-run.
-
----
-
-## Contributing
-
-If you find issues, bugs, or documentation gaps, please [open an issue](https://github.com/sola-st/RepairAgent/issues) or [email the author](mailto:fi_bouzenia@esi.dz).
-
----
-
-## Citation
-
-If you use RepairAgent in your research, please cite:
-
-```bibtex
-@inproceedings{bouzenia2024repairagent,
-  title={RepairAgent: An Autonomous, LLM-Based Agent for Program Repair},
-  author={Bouzenia, Islem and Pradel, Michael},
-  booktitle={Proceedings of the 47th International Conference on Software Engineering (ICSE)},
-  year={2025},
-  url={https://arxiv.org/abs/2403.17134}
-}
-```
+1. entre em `repair_agent`;
+2. confirme que o Ollama esta ativo;
+3. confirme que os modelos existem em `ollama list`;
+4. revise `config.yaml`;
+5. deixe apenas os modelos que deseja comparar em `grid_search.models`;
+6. defina `overwrite: false` para preservar resultados existentes;
+7. rode `python3 grid_search.py --config config.yaml`;
+8. acompanhe `model_summary.csv` e os `run.log`.

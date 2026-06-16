@@ -196,3 +196,7 @@ repair_agent/grid_results/
 
 # Claude Code
 .claude/
+
+repair_agent/grid_results_final/
+repair_agent/.tiktoken-cache/
+

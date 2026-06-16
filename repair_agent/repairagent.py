@@ -10,6 +10,7 @@ Usage:
 import json
 import locale
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -744,9 +745,14 @@ def increment_experiment() -> str:
     exp_list_path = SCRIPT_DIR / "experimental_setups" / "experiments_list.txt"
     exp_list_path.parent.mkdir(parents=True, exist_ok=True)
 
+    valid_exps = []
     if exp_list_path.exists():
-        exps = exp_list_path.read_text().strip().splitlines()
-        last_exp = int(exps[-1].split("_")[1]) if exps else 0
+        for line in exp_list_path.read_text(errors="replace").splitlines():
+            line = line.strip().replace("\x00", "")
+            match = re.fullmatch(r"experiment_(\d+)", line)
+            if match:
+                valid_exps.append((int(match.group(1)), line))
+        last_exp = max((number for number, _ in valid_exps), default=0)
     else:
         exp_list_path.write_text("")
         last_exp = 0
@@ -755,8 +761,9 @@ def increment_experiment() -> str:
     exp_name = f"experiment_{new_exp}"
     exp_dir = SCRIPT_DIR / "experimental_setups" / exp_name
 
-    with open(exp_list_path, "a") as f:
-        f.write(f"{exp_name}\n")
+    clean_names = [name for _, name in sorted(set(valid_exps))]
+    clean_names.append(exp_name)
+    exp_list_path.write_text("\n".join(clean_names) + "\n")
 
     for subdir in ["logs", "responses", "external_fixes", "saved_contexts", "mutations_history", "plausible_patches"]:
         (exp_dir / subdir).mkdir(parents=True, exist_ok=True)
